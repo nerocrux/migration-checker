@@ -1,0 +1,36 @@
+name: Migration Checker
+description: 'Check if code change and migration SQL added in the same Pull Request'
+inputs:
+  migration_code_paths:
+    description: 'Newline-delimited string of paths which contains migration SQL to be checked'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+
+    - name: Check for changes in migration code paths
+      id: check-migrations
+      run: |
+        PATHS_CHANGED="false"
+        for path in $migration_code_paths; do
+          if git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | grep "^$path"; then
+            PATHS_CHANGED="true"
+            break
+          fi
+        done
+        echo "PATHS_CHANGED=$PATHS_CHANGED" >> $GITHUB_ENV
+
+    - name: Check for changes outside of migrator paths
+      if: env.PATHS_CHANGED == 'true'
+      run: |
+        # Check for changes outside of the migration code paths
+        EXCLUDE_PATHS=$(echo $migration_code_paths | sed 's/ /|/g')
+        if git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | grep -vE "($EXCLUDE_PATHS)"; then
+          echo "Changes detected outside of the paths of the migration codes"
+          exit 1
+        fi
+
