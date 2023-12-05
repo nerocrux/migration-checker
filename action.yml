@@ -12,11 +12,19 @@ runs:
       with:
         fetch-depth: 0
 
+    - name: Set environment variable for migration_code_paths
+      shell: bash
+      run: |
+        echo "MIGRATION_CODE_PATHS<<EOF" >> $GITHUB_ENV
+        echo "${{ inputs.migration_code_paths }}" | sed 's/$/%%/' >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
+
     - name: Check for changes in migration code paths
       shell: bash
       run: |
         PATHS_CHANGED="false"
-        for path in ${{ inputs.migration_code_paths }}; do
+        IFS='%%' read -r -a PATHS_ARRAY <<< "$MIGRATION_CODE_PATHS"
+        for path in "${PATHS_ARRAY[@]}"; do
           if git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | grep "^$path"; then
             PATHS_CHANGED="true"
             break
@@ -28,8 +36,14 @@ runs:
       if: env.PATHS_CHANGED == 'true'
       shell: bash
       run: |
-        # Check for changes outside of the migration code paths
-        EXCLUDE_PATHS=$(echo "${{ inputs.migration_code_paths }}" | sed 's/ /|/g')
+        IFS='%%' read -r -a PATHS_ARRAY <<< "$MIGRATION_CODE_PATHS"
+        EXCLUDE_PATHS=""
+        for path in "${PATHS_ARRAY[@]}"; do
+          if [[ -n "$path" ]]; then
+            EXCLUDE_PATHS+="^$path|"
+          fi
+        done
+        EXCLUDE_PATHS=${EXCLUDE_PATHS%|}
         if git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | grep -vE "($EXCLUDE_PATHS)"; then
           echo "Changes detected outside of the paths of the migration codes"
           exit 1
