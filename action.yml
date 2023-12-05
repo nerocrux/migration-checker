@@ -4,6 +4,9 @@ inputs:
   migration_code_paths:
     description: 'Newline-delimited string of paths which contains migration SQL to be checked'
     required: true
+  ignore_paths:
+    description: 'Paths ignored when being checked'
+    required: false
 runs:
   using: 'composite'
   steps:
@@ -18,31 +21,46 @@ runs:
         echo "MIGRATION_CODE_PATHS<<EOF" >> $GITHUB_ENV
         echo "${{ inputs.migration_code_paths }}" | sed 's/$/%%/' >> $GITHUB_ENV
         echo "EOF" >> $GITHUB_ENV
+        echo "IGNORE_PATHS<<EOF" >> $GITHUB_ENV
+        echo "${{ inputs.ignore_paths }}" | sed 's/$/%%/' >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
 
     - name: Check for changes in migration code paths
       shell: bash
       run: |
+        MIGRATION_CODE_PATHS="${{ inputs.migration_code_paths }}"
         PATHS_CHANGED="false"
-        IFS='%%' read -r -a PATHS_ARRAY <<< "$MIGRATION_CODE_PATHS"
-        for path in "${PATHS_ARRAY[@]}"; do
-          if git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | grep "^$path"; then
+        CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+
+        for path in $MIGRATION_CODE_PATHS; do
+          if echo "$CHANGED_FILES" | grep -E "^$path"; then
             PATHS_CHANGED="true"
             break
           fi
         done
+
+        echo "CHANGED = $PATHS_CHANGED"
         echo "PATHS_CHANGED=$PATHS_CHANGED" >> $GITHUB_ENV
 
     - name: Check for changes outside of migrator paths
       if: env.PATHS_CHANGED == 'true'
       shell: bash
       run: |
-        IFS='%%' read -r -a PATHS_ARRAY <<< "$MIGRATION_CODE_PATHS"
+        IGNORE_PATHS="${{ inputs.ignore_paths }}"
+        MIGRATION_CODE_PATHS="${{ inputs.migration_code_paths }}"
         EXCLUDE_PATHS=""
-        for path in "${PATHS_ARRAY[@]}"; do
+
+        for path in $MIGRATION_CODE_PATHS; do
           if [[ -n "$path" ]]; then
             EXCLUDE_PATHS+="^$path|"
           fi
         done
+        for path in $IGNORE_PATHS; do
+          if [[ -n "$path" ]]; then
+            EXCLUDE_PATHS+="^$path|"
+          fi
+        done
+
         EXCLUDE_PATHS=${EXCLUDE_PATHS%|}
         if git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | grep -vE "($EXCLUDE_PATHS)"; then
           echo "Changes detected outside of the paths of the migration codes"
