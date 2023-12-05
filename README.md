@@ -39,10 +39,11 @@ jobs:
         with:
           migration_code_paths: |
             db/migrations/AAA
-			db/migrations/BBB
+            db/migrations/BBB
+          ignore_paths: |
+            .github/
 ```
 
-Multiple DB migration SQL directories can be configured in `migration_code_paths` (line delimiter).
-
-This migration report failure if in a single pull request, there are changes in both `migration_code_paths` and other places.
+- Multiple DB migration SQL directories can be configured in `migration_code_paths` (line delimiter).
+- You can ignore certain paths with `ignore_paths` so their changes won't be count when DB migration exists.
 
